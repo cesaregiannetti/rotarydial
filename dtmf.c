@@ -244,6 +244,8 @@ ISR(TIMER0_OVF_vect)
     }
     else
     {
+        // double A component
+        sin_a <<= 1;
         sin_b = 0;
     }
 
