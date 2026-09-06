@@ -14,6 +14,10 @@
 //                Cleaned up implementation, modified to work more like the
 //                Rotatone product.
 //
+// Modified     : Cesare Giannetti 2026-09-06
+//                https://github.com/cesaregiannetti/rotarydial
+//                Parametric frequencies allow to use 8MHz crystal
+//
 // This code is distributed under the GNU Public License
 // which can be found at http://www.gnu.org/licenses/gpl.txt
 //
@@ -34,10 +38,38 @@
 
 #define DTMF_DURATION_MS    100
 
-// PWM frequency = 4Mhz/256 = 15625Hz; overflow cycles per MS = 15
-#define T0_OVERFLOW_PER_MS  15
+#define FAST_PWM_PERIOD     256 // ATTYNY85 specs
+#define T0_OVERFLOW_PER_S   (F_CPU / FAST_PWM_PERIOD)
+#define T0_OVERFLOW_PER_MS  (int)(T0_OVERFLOW_PER_S / 1000)
 
 #define PIN_PWM_OUT         PB0     // PB0 (OC0A) as PWM output
+
+// Sine table sample len
+#define SAMPLE_BITS         7
+#define NUM_SAMPLES         _BV(SAMPLE_BITS)
+#define SAMPLE_MASK         (NUM_SAMPLES - 1)
+
+// Sine phase resolution
+#define PHASE_BITS          3
+#define PHASE_HALF          _BV(PHASE_BITS - 1)
+#define PHASE_SIZE          _BV(PHASE_BITS + SAMPLE_BITS)
+
+// Sine phase projection
+#define PHASE_STEP(F)       ((long)(F) * PHASE_SIZE / T0_OVERFLOW_PER_S)
+#define PHASE_JUMP(P)       ((((P) + PHASE_HALF) >> PHASE_BITS) & SAMPLE_MASK)
+
+#define FREQ_H1             PHASE_STEP(1209)
+#define FREQ_H2             PHASE_STEP(1336)
+#define FREQ_H3             PHASE_STEP(1477)
+#define FREQ_L1             PHASE_STEP(697)
+#define FREQ_L2             PHASE_STEP(770)
+#define FREQ_L3             PHASE_STEP(852)
+#define FREQ_L4             PHASE_STEP(941)
+#define FREQ_BEEP_LOW       PHASE_STEP(500)
+#define FREQ_C              PHASE_STEP(523)
+#define FREQ_E              PHASE_STEP(659)
+#define FREQ_G              PHASE_STEP(784)
+#define FREQ_BEEP           PHASE_STEP(1000)
 
 void dtmf_init(void);
 void dtmf_generate_tone(int8_t digit, uint16_t duration_ms);
