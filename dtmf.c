@@ -14,6 +14,10 @@
 //                Cleaned up implementation, modified to work more like the
 //                Rotatone product.
 //
+// Modified     : Cesare Giannetti 2026-09-06
+//                https://github.com/cesaregiannetti/rotarydial
+//                Parametric frequencies allow to use 8MHz crystal
+//
 // This code is distributed under the GNU Public License
 // which can be found at http://www.gnu.org/licenses/gpl.txt
 //
@@ -30,7 +34,6 @@
 
 #define TIMER_CLK_DIV1              0x01    ///< Timer clocked at F_CPU
 #define TIMER_PRESCALE_MASK0        0x07    ///< Timer Prescaler Bit-Mask
-#define NUM_SAMPLES                 128     // Number of samples in lookup table
 
 
 static void dtmf_enable_pwm(void);
@@ -76,7 +79,7 @@ const uint8_t auc_sin_param[NUM_SAMPLES] = {
 
 //***************************  x_SW  ***************************************
 // Fck = Xtal/prescaler
-// Table of x_SW (excess 8): x_SW = ROUND(8 * N_samples * f * 510 / Fck)
+// Table of x_SW (excess 8): x_SW = ROUND(8 * N_samples * f * 256 / Fck)
 //**************************************************************************
 
 // high frequency
@@ -99,18 +102,18 @@ const uint8_t auc_sin_param[NUM_SAMPLES] = {
 
 const uint8_t auc_frequency[12][2] =
 {
-    { 87, 61 }, // 0
-    { 79, 46 }, // 1
-    { 87, 46 }, // 2
-    { 96, 46 }, // 3
-    { 79, 50 }, // 4
-    { 87, 50 }, // 5
-    { 96, 50 }, // 6
-    { 79, 56 }, // 7
-    { 87, 56 }, // 8
-    { 96, 56 }, // 9
-    { 79, 61 }, // *
-    { 96, 61 }, // #
+    { FREQ_H2, FREQ_L4 }, // 0
+    { FREQ_H1, FREQ_L1 }, // 1
+    { FREQ_H2, FREQ_L1 }, // 2
+    { FREQ_H3, FREQ_L1 }, // 3
+    { FREQ_H1, FREQ_L2 }, // 4
+    { FREQ_H2, FREQ_L2 }, // 5
+    { FREQ_H3, FREQ_L2 }, // 6
+    { FREQ_H1, FREQ_L3 }, // 7
+    { FREQ_H2, FREQ_L3 }, // 8
+    { FREQ_H3, FREQ_L3 }, // 9
+    { FREQ_H1, FREQ_L4 }, // *
+    { FREQ_H3, FREQ_L4 }, // #
 };
 
 volatile uint32_t _g_delay_counter;         // Delay counter for sleep function
@@ -155,7 +158,7 @@ void dtmf_generate_tone(int8_t digit, uint16_t duration_ms)
     else if (digit == DIGIT_BEEP)
     {
         // Beep ~1000Hz (66)
-        _g_stepwidth_a = 66;  
+        _g_stepwidth_a = FREQ_BEEP;
         _g_stepwidth_b = 0;
         dtmf_enable_pwm();
 
@@ -165,7 +168,7 @@ void dtmf_generate_tone(int8_t digit, uint16_t duration_ms)
     else if (digit == DIGIT_BEEP_LOW)
     {
         // Beep ~500Hz (33)
-        _g_stepwidth_a = 33;  
+        _g_stepwidth_a = FREQ_BEEP_LOW;
         _g_stepwidth_b = 0;
         dtmf_enable_pwm();
 
@@ -174,26 +177,26 @@ void dtmf_generate_tone(int8_t digit, uint16_t duration_ms)
     }
     else if (digit == DIGIT_TUNE_ASC)
     {
-        _g_stepwidth_a = 34;    // C=523.25Hz  
+        _g_stepwidth_a = FREQ_C; // C=523.25Hz
         _g_stepwidth_b = 0;
         dtmf_enable_pwm();
         
         sleep_ms(duration_ms / 3);
-        _g_stepwidth_a = 43;    // E=659.26Hz
+        _g_stepwidth_a = FREQ_E; // E=659.26Hz
         sleep_ms(duration_ms / 3);
-        _g_stepwidth_a = 51;    // G=784Hz
+        _g_stepwidth_a = FREQ_G; // G=784Hz
         sleep_ms(duration_ms / 3);
     }
     else if (digit == DIGIT_TUNE_DESC)
     {
-        _g_stepwidth_a = 51;    // G=784Hz
+        _g_stepwidth_a = FREQ_G; // G=784Hz
         _g_stepwidth_b = 0;
         dtmf_enable_pwm();
 
         sleep_ms(duration_ms / 3);
-        _g_stepwidth_a = 43;    // E=659.26Hz
+        _g_stepwidth_a = FREQ_E; // E=659.26Hz
         sleep_ms(duration_ms / 3);
-        _g_stepwidth_a = 34;    // C=523.25Hz  
+        _g_stepwidth_a = FREQ_C; // C=523.25Hz
         sleep_ms(duration_ms / 3);
     }
 
@@ -226,7 +229,7 @@ ISR(TIMER0_OVF_vect)
     // move Pointer about step width ahead
     _g_cur_sin_val_a += _g_stepwidth_a;      
     // normalize Temp-Pointer 
-    uint16_t tmp_sin_val_a = (int8_t)(((_g_cur_sin_val_a + 4) >> 3) & (0x007F)); 
+    uint16_t tmp_sin_val_a = PHASE_JUMP(_g_cur_sin_val_a);
     sin_a = auc_sin_param[tmp_sin_val_a];
 
     // B component (low frequency) is optional
@@ -236,7 +239,7 @@ ISR(TIMER0_OVF_vect)
         _g_cur_sin_val_b += _g_stepwidth_b;    
 
         // normalize Temp-Pointer    
-        uint16_t tmp_sin_val_b = (int8_t)(((_g_cur_sin_val_b + 4) >> 3) & (0x007F));        
+        uint16_t tmp_sin_val_b = PHASE_JUMP(_g_cur_sin_val_b);
         sin_b = auc_sin_param[tmp_sin_val_b];
     }
     else
