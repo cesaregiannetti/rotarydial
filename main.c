@@ -203,7 +203,7 @@ int main(void)
                 rs->flags |= F_DETECT_SPECIAL_L2;
 
                 // Indicate that we entered L1 SF mode with short beep
-                dtmf_generate_tone(DIGIT_BEEP_LOW, 200);
+                dtmf_generate_tone(DIGIT_BEEP_LOW, BEEP_DURATION_MS);
             }
         }
         else if (rs->flags & F_DETECT_SPECIAL_L2)
@@ -220,7 +220,7 @@ int main(void)
                 rs->flags &= ~F_DETECT_SPECIAL_L2;
 
                 // Indicate that we entered L2 SF mode with asc tone
-                dtmf_generate_tone(DIGIT_TUNE_ASC, 200);
+                dtmf_generate_tone(DIGIT_TUNE_ASC, BEEP_DURATION_MS);
             }
         }
         else
@@ -302,7 +302,7 @@ static void process_dialed_digit(runstate_t *rs)
             // Exit speed dial mode
             rs->state = STATE_DIAL;
             // Beep to indicate that we done
-            dtmf_generate_tone(DIGIT_TUNE_DESC, 800);
+            dtmf_generate_tone(DIGIT_TUNE_DESC, BEEP_DURATION_MS);
         } 
         else
         {

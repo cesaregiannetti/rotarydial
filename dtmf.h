@@ -37,7 +37,7 @@
 #define DIGIT_POUND         11
 
 #define DTMF_DURATION_MS    100
-
+#define BEEP_DURATION_MS    200
 #define FAST_PWM_PERIOD     256 // ATTYNY85 specs
 #define T0_OVERFLOW_PER_S   (F_CPU / FAST_PWM_PERIOD)
 #define T0_OVERFLOW_PER_MS  (int)(T0_OVERFLOW_PER_S / 1000)
