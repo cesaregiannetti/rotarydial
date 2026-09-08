@@ -50,7 +50,7 @@
 #define SAMPLE_MASK         (NUM_SAMPLES - 1)
 
 // Sine phase resolution
-#define PHASE_BITS          3
+#define PHASE_BITS          5
 #define PHASE_HALF          _BV(PHASE_BITS - 1)
 #define PHASE_SIZE          _BV(PHASE_BITS + SAMPLE_BITS)
 
