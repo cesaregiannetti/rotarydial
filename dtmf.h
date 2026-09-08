@@ -28,26 +28,25 @@
 #ifndef __DTMF_H__
 #define __DTMF_H__
 
-#define DIGIT_BEEP          -10
 #define DIGIT_BEEP_LOW      -13
-#define DIGIT_TUNE_ASC      -11
 #define DIGIT_TUNE_DESC     -12
-#define DIGIT_OFF           -1
+#define DIGIT_TUNE_ASC      -11
+#define DIGIT_BEEP          -10
+#define DIGIT_NULL          -1
 #define DIGIT_STAR          10
-#define DIGIT_POUND         11
+#define DIGIT_HASH          11
+#define IS_DIGIT(D)         ((D) >= 0 && (D) <= DIGIT_HASH)
 
+#define PIN_PWM_OUT         PB0 // PB0 (OC0A) as PWM output
 #define DTMF_DURATION_MS    100
 #define BEEP_DURATION_MS    200
 #define FAST_PWM_PERIOD     256 // ATTYNY85 specs
 #define T0_OVERFLOW_PER_S   (F_CPU / FAST_PWM_PERIOD)
-#define T0_OVERFLOW_PER_MS  (int)(T0_OVERFLOW_PER_S / 1000)
-
-#define PIN_PWM_OUT         PB0     // PB0 (OC0A) as PWM output
 
 // Sine table sample len
 #define SAMPLE_BITS         7
-#define NUM_SAMPLES         _BV(SAMPLE_BITS)
-#define SAMPLE_MASK         (NUM_SAMPLES - 1)
+#define SAMPLE_SIZE         _BV(SAMPLE_BITS)
+#define SAMPLE_MASK         (SAMPLE_SIZE - 1)
 
 // Sine phase resolution
 #define PHASE_BITS          5
@@ -66,17 +65,19 @@
 #define FREQ_L3             PHASE_STEP(852)
 #define FREQ_L4             PHASE_STEP(941)
 #define FREQ_BEEP_LOW       PHASE_STEP(500)
-#define FREQ_C              PHASE_STEP(523)
-#define FREQ_E              PHASE_STEP(659)
-#define FREQ_G              PHASE_STEP(784)
+#define FREQ_DO             PHASE_STEP(523)
+#define FREQ_MI             PHASE_STEP(659)
+#define FREQ_SOL            PHASE_STEP(784)
 #define FREQ_BEEP           PHASE_STEP(1000)
 
-void dtmf_init(void);
-void dtmf_generate_tone(int8_t digit, uint16_t duration_ms);
-void sleep_ms(uint16_t msec);
+void dtmf_init();
+void dtmf_generate_tone(int8_t, uint16_t);
+void play_tone(uint8_t, uint16_t);
+void play_tune(uint8_t, uint8_t, uint8_t, uint16_t);
+void dtmf_enable_pwm();
+void dtmf_disable_pwm();
+void sleep_ms(uint16_t);
 
 extern volatile uint32_t _g_delay_counter;
 
 #endif /* __DTMF_H__ */
-
-

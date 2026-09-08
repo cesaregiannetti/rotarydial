@@ -33,12 +33,10 @@
 #include <util/delay.h>
 #include <avr/eeprom.h>
 
-#include "dtmf.h" 
+#include "dtmf.h"
 
 #define PIN_DIAL                    PB1
 #define PIN_PULSE                   PB2
-
-#define SPEED_DIAL_SIZE             32
 
 #define STATE_DIAL                  0x00
 #define STATE_SPECIAL_L1            0x01
@@ -50,15 +48,16 @@
 #define F_DETECT_SPECIAL_L2         0x02
 #define F_WDT_AWAKE                 0x04
 
-#define SLEEP_64MS                  0x00
-#define SLEEP_128MS                 0x01
-#define SLEEP_2S                    0x02
+#define SLEEP_64MS                  (_BV(WDP1))
+#define SLEEP_125MS                 (_BV(WDP0) | _BV(WDP1))
+#define SLEEP_2S                    (_BV(WDP0) | _BV(WDP1) | _BV(WDP2))
 
-#define SPEED_DIAL_COUNT            8 // 8 Positions in total (Redail(3),4,5,6,7,8,9,0)
+#define SPEED_DIAL_SIZE             32
+#define SPEED_DIAL_COUNT            8 // 0,4,5,6,7,8,9,redial
 #define SPEED_DIAL_REDIAL           (SPEED_DIAL_COUNT - 1)
 
 #define L2_STAR                     1
-#define L2_POUND                    2
+#define L2_HASH                     2
 #define L2_REDIAL                   3
 
 typedef struct
@@ -72,33 +71,22 @@ typedef struct
     int8_t dialed_digit;
 } runstate_t;
 
-static void init(void);
-static void process_dialed_digit(runstate_t *rs);
-static void dial_speed_dial_number(int8_t *speed_dial_digits, int8_t index);
-static void write_current_speed_dial(int8_t *speed_dial_digits, int8_t index);
-static void wdt_timer_start(uint8_t delay);
-static void start_sleep(void);
-static void wdt_stop(void);
+static void init();
+static void process_dialed_digit(runstate_t*);
+static void dial_speed_dial_number(int8_t*, int8_t);
+static void write_current_speed_dial(int8_t*, int8_t);
+static void wdt_timer_start(uint8_t);
+static void start_sleep();
+static void wdt_stop();
 
-// Map speed dial numbers to memory locations
-const int8_t _g_speed_dial_loc[] =
-{
-    0,
-    -1 /* 1 - * */,
-    -1 /* 2 - # */,
-    -1 /* 3 - Redial */,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6 
-};
+// Map speed dial numbers to memory locations (1->*, 2->#, 3->redial)
+const int8_t _g_speed_dial_loc[] = { 0, -1, -1, -1, 1, 2, 3, 4, 5, 6 };
 
-int8_t EEMEM _g_speed_dial_eeprom[SPEED_DIAL_COUNT][SPEED_DIAL_SIZE] = { [0 ... (SPEED_DIAL_COUNT - 1)][0 ... SPEED_DIAL_SIZE - 1] = DIGIT_OFF };
+int8_t EEMEM _g_speed_dial_eeprom[SPEED_DIAL_COUNT][SPEED_DIAL_SIZE] =
+    { [0 ... SPEED_DIAL_COUNT - 1][0 ... SPEED_DIAL_SIZE - 1] = DIGIT_NULL };
 runstate_t _g_run_state;
 
-int main(void)
+int main()
 {
     runstate_t *rs = &_g_run_state;
     bool dial_pin_prev_state;
@@ -106,30 +94,30 @@ int main(void)
     init();
 
     // Wait for the decoupling capacitors to charge
-    wdt_timer_start(SLEEP_128MS);
+    wdt_timer_start(SLEEP_125MS);
     start_sleep();
     wdt_stop();
 
     dtmf_init();
 
-    // Local dial status variables 
+    // Local dial status variables
     rs->state = STATE_DIAL;
     rs->dial_pin_state = true;
     rs->flags = F_NONE;
     rs->speed_dial_digit_index = 0;
     rs->speed_dial_index = 0;
     dial_pin_prev_state = true;
-    
+
     for (uint8_t i = 0; i < SPEED_DIAL_SIZE; i++)
-        rs->speed_dial_digits[i] = DIGIT_OFF;
+        rs->speed_dial_digits[i] = DIGIT_NULL;
 
     while (1)
     {
         rs->dial_pin_state = bit_is_set(PINB, PIN_DIAL);
 
-        if (dial_pin_prev_state != rs->dial_pin_state) 
+        if (dial_pin_prev_state != rs->dial_pin_state)
         {
-            if (!rs->dial_pin_state) 
+            if (!rs->dial_pin_state)
             {
                 // Dial just started
                 // Enable special function detection
@@ -139,7 +127,7 @@ int main(void)
                 wdt_timer_start(SLEEP_64MS);
                 start_sleep();
             }
-            else 
+            else
             {
                 // Disable SF detection (should be already disabled)
                 rs->flags = F_NONE;
@@ -148,45 +136,44 @@ int main(void)
                 if (rs->dialed_digit <= 0 || rs->dialed_digit > 10)
                 {
                     // Should never happen - no pulses detected OR count more than 10 pulses
-                    rs->dialed_digit = DIGIT_OFF;                    
-                    
+                    rs->dialed_digit = DIGIT_NULL;
+
                     // Do nothing
                     wdt_timer_start(SLEEP_64MS);
                     start_sleep();
                 }
-                else 
+                else
                 {
-                    // Got a valid digit - process it            
+                    // Got a valid digit - process it
 #ifdef NZ_DIAL
                     // NZPO Phones only. 0 is same as GPO but 1-9 are reversed.
                     rs->dialed_digit = (10 - rs->dialed_digit);
 #else
-                    if (rs->dialed_digit == 10)
-                        rs->dialed_digit = 0; // 10 pulses => 0
+                    rs->dialed_digit %= 10; // 10 pulses => 0
 #endif
-                    wdt_timer_start(SLEEP_128MS);
+                    wdt_timer_start(SLEEP_125MS);
                     start_sleep();
                     wdt_stop();
 
                     process_dialed_digit(rs);
                 }
-            }    
-        } 
-        else 
+            }
+        }
+        else
         {
-            if (rs->dial_pin_state) 
+            if (rs->dial_pin_state)
             {
                 // Rotary dial at the rest position
                 // Reset all variables
                 rs->state = STATE_DIAL;
                 rs->flags = F_NONE;
-                rs->dialed_digit = DIGIT_OFF;
+                rs->dialed_digit = DIGIT_NULL;
             }
         }
 
         dial_pin_prev_state = rs->dial_pin_state;
 
-        // Don't power down if special function detection is active        
+        // Don't power down if special function detection is active
         if (rs->flags & F_DETECT_SPECIAL_L1)
         {
             // Put MCU to sleep - to be awoken either by pin interrupt or WDT
@@ -245,9 +232,8 @@ static void process_dialed_digit(runstate_t *rs)
         if (rs->speed_dial_digit_index < SPEED_DIAL_SIZE)
         {
             // During regular dial always save into the 'Redial' position of the speed dial memory
-            rs->speed_dial_digits[rs->speed_dial_digit_index] = rs->dialed_digit;
-            rs->speed_dial_digit_index++;
-            
+            rs->speed_dial_digits[rs->speed_dial_digit_index++] = rs->dialed_digit;
+
             write_current_speed_dial(rs->speed_dial_digits, SPEED_DIAL_REDIAL);
         }
     }
@@ -256,25 +242,21 @@ static void process_dialed_digit(runstate_t *rs)
         if (rs->dialed_digit == L2_STAR)
         {
             // SF 1-*
-            dtmf_generate_tone(DIGIT_STAR, DTMF_DURATION_MS);  
+            dtmf_generate_tone(DIGIT_STAR, DTMF_DURATION_MS);
             rs->state = STATE_DIAL;
         }
-        else if (rs->dialed_digit == L2_POUND)
+        else if (rs->dialed_digit == L2_HASH)
         {
             // SF 2-#
-            dtmf_generate_tone(DIGIT_POUND, DTMF_DURATION_MS);
+            dtmf_generate_tone(DIGIT_HASH, DTMF_DURATION_MS);
             rs->state = STATE_DIAL;
         }
         else if (rs->dialed_digit == L2_REDIAL)
-        {
             // SF 3 (Redial)
             dial_speed_dial_number(rs->speed_dial_digits, SPEED_DIAL_REDIAL);
-        }
         else if (_g_speed_dial_loc[rs->dialed_digit] >= 0)
-        {
             // Call speed dial number
             dial_speed_dial_number(rs->speed_dial_digits, _g_speed_dial_loc[rs->dialed_digit]);
-        }
     }
     else if (rs->state == STATE_SPECIAL_L2)
     {
@@ -284,15 +266,13 @@ static void process_dialed_digit(runstate_t *rs)
             rs->speed_dial_digit_index = 0;
 
             for (uint8_t i = 0; i < SPEED_DIAL_SIZE; i++)
-                rs->speed_dial_digits[i] = DIGIT_OFF;
+                rs->speed_dial_digits[i] = DIGIT_NULL;
 
             rs->state = STATE_PROGRAM_SD;
         }
         else
-        {
-            // Not a speed dial position. Revert back to ordinary dial        
+            // Not a speed dial position. Revert back to ordinary dial
             rs->state = STATE_DIAL;
-        }
     }
     else if (rs->state == STATE_PROGRAM_SD)
     {
@@ -303,13 +283,11 @@ static void process_dialed_digit(runstate_t *rs)
             rs->state = STATE_DIAL;
             // Beep to indicate that we done
             dtmf_generate_tone(DIGIT_TUNE_DESC, BEEP_DURATION_MS);
-        } 
+        }
         else
         {
             // Next digit
-            rs->speed_dial_digits[rs->speed_dial_digit_index] = rs->dialed_digit;
-            rs->speed_dial_digit_index++;
-
+            rs->speed_dial_digits[rs->speed_dial_digit_index++] = rs->dialed_digit;
             // Generic beep - do not gererate DTMF code
             dtmf_generate_tone(DIGIT_BEEP, DTMF_DURATION_MS);
         }
@@ -330,11 +308,11 @@ static void dial_speed_dial_number(int8_t *speed_dial_digits, int8_t index)
         {
             // Dial the number
             // Skip dialing invalid digits
-            if (speed_dial_digits[i] >= 0 && speed_dial_digits[i] <= DIGIT_POUND)
+            if (IS_DIGIT(speed_dial_digits[i]))
             {
-                dtmf_generate_tone(speed_dial_digits[i], DTMF_DURATION_MS);  
+                dtmf_generate_tone(speed_dial_digits[i], DTMF_DURATION_MS);
                 // Pause between DTMF tones
-                sleep_ms(DTMF_DURATION_MS);    
+                sleep_ms(DTMF_DURATION_MS);
             }
         }
     }
@@ -343,16 +321,14 @@ static void dial_speed_dial_number(int8_t *speed_dial_digits, int8_t index)
 static void write_current_speed_dial(int8_t *speed_dial_digits, int8_t index)
 {
     if (index >= 0 && index < SPEED_DIAL_COUNT)
-    {
         // If dialed index SPEED_DIAL_FIRST => using array index 0
         eeprom_update_block(speed_dial_digits, &_g_speed_dial_eeprom[index][0], SPEED_DIAL_SIZE);
-    }
 }
 
-static void init(void)
+static void init()
 {
     // Program clock prescaller to divide + frequency by 1
-    // Write CLKPCE 1 and other bits 0    
+    // Write CLKPCE 1 and other bits 0
     CLKPR = _BV(CLKPCE);
 
     // Write prescaler value with CLKPCE = 0
@@ -366,12 +342,12 @@ static void init(void)
     ACSR = _BV(ACD);
 
     // Configure pin change interrupt
-    MCUCR = _BV(ISC01) | _BV(ISC00);         // Set INT0 for falling edge detection
+    MCUCR = _BV(ISC01) | _BV(ISC00);         // Set INT0 for rising edge detection
     GIMSK = _BV(INT0) | _BV(PCIE);           // Added INT0
     PCMSK = _BV(PIN_DIAL) | _BV(PIN_PULSE);
 
     // Enable interrupts
-    sei();                              
+    sei();
 }
 
 static void wdt_timer_start(uint8_t delay)
@@ -380,22 +356,11 @@ static void wdt_timer_start(uint8_t delay)
     cli();
     MCUSR = 0x00;
     WDTCR |= _BV(WDCE) | _BV(WDE);
-    switch (delay)
-    {
-        case SLEEP_64MS:
-            WDTCR = _BV(WDIE) | _BV(WDP1);
-            break;
-        case SLEEP_128MS:
-            WDTCR = _BV(WDIE) | _BV(WDP1) | _BV(WDP0);
-            break;
-        case SLEEP_2S:
-            WDTCR = _BV(WDIE) | _BV(WDP0) | _BV(WDP1) | _BV(WDP2); // 2048ms
-            break;
-    }
+    WDTCR = _BV(WDIE) | delay;
     sei();
 }
 
-static void wdt_stop(void)
+static void wdt_stop()
 {
     wdt_reset();
     cli();
@@ -405,7 +370,7 @@ static void wdt_stop(void)
     sei();
 }
 
-static void start_sleep(void)
+static void start_sleep()
 {
     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
     cli();                          // stop interrupts to ensure the BOD timed sequence executes as required
