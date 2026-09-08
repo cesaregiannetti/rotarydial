@@ -311,7 +311,7 @@ static void process_dialed_digit(runstate_t *rs)
             rs->speed_dial_digit_index++;
 
             // Generic beep - do not gererate DTMF code
-            dtmf_generate_tone(DIGIT_BEEP_LOW, DTMF_DURATION_MS);
+            dtmf_generate_tone(DIGIT_BEEP, DTMF_DURATION_MS);
         }
 
         // Write SD on every digit so user can hang up to save
